@@ -12,7 +12,6 @@
 
 use strict;
 use warnings;
-use Keith;
 use FAlite;
 use Getopt::Long;
 use List::Util qw(sum max min);
