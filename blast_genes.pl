@@ -1,9 +1,10 @@
 #!/usr/bin/perl
-## A script to calculate coding sequence and individual exon coverage: 
-#  create gene and exon fasta files from Species A if not already created, and blast those files against an assembly.
-
+# A script to calculate coding sequence and individual exon coverage: 
+# create gene and exon fasta files from Species A if not already created, and blast those files against an assembly.
+#
+# Written by Ian Korf, Ken Yu, and Keith Bradnam
 # This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
-
+#
 # Last updated by: $Author$
 # Last updated on: $Date$
 
@@ -11,14 +12,15 @@ use strict; use warnings;
 use Getopt::Std;
 use List::Util qw(min max);
 use FAlite;
-use vars qw($opt_i $opt_w $opt_W $opt_l);
-getopts('i:l:w:W:');
+use vars qw($opt_i $opt_w $opt_W $opt_l $opt_e);
+getopts('i:l:w:W:e:');
 
 # set default values
 $opt_i = 95 if (!$opt_i);
 $opt_w = 13 if (!$opt_w);
 $opt_W = 13 if (!$opt_W);
 $opt_l = 95 if (!$opt_l);
+$opt_e = 30 if (!$opt_e);
 
 die " 
 Usage: generate_results.pl [blast_options] <assembly_file> <species_dir>
@@ -27,63 +29,80 @@ blast_options:
  -l <minimum percentage length of gene that must match assembly contig (0-100%)> - default = $opt_l
  -w <minimum word size> - default = $opt_w
  -W <wink size> - default = $opt_W
- 
+ -e <minimum exon size> - default = $opt_e (we can't BLAST very short exons, so just ignore those below min size)
+
 (species_dir should include Species A A1 and A2 genome fasta and gff files) 
 " unless (@ARGV == 2);
 
 my ($assembly_file, $species_dir) = @ARGV;
 
-# Species that we will work with
-my @species_A = qw(A A1 A2);
-my $num_genes_in_A = 176;
+# check if all genome and gff files are present (2 files per genome, 6 files total)
+check_files();
 
 # Convert command-line options to variable names
-my ($wink, $word_min, $identity, $min_length) = ($opt_W, $opt_w, $opt_i, $opt_l);
+my ($wink, $word_min, $identity, $min_percent_length, $min_exon_length) = ($opt_W, $opt_w, $opt_i, $opt_l, $opt_e);
+
+
+# will store genomes as a hash of hashes, first key is genome type (A, A1, A2), second key is chromosome number (0,1,2), value is sequence
+my %genomes;
+
+# may want to skip very short exons 
+my %exons_to_skip;
+
+# genomes that that we will work with. 2 haplotypes + 1 reference version of the two haplotypes
+my @haplotypes = qw(A A1 A2);
+
+# keep track of exon and gene count across genome
+my %genomes_to_count;
 
 # store CDS coordinates in a hash of hash structure, hash key is gene ID, second level gives strand and chromosome information
 # also stores CDS coordinates as an array of number associated with hash key 'coords'
 my %cds_details = ();
 
-# store genomes as a hash of hashes, first key is genome type (A, A1, A2), second key is chromosome number (0,1,2), value is sequence
-my %genomes;
-
-# check if all genome and gff files are present (2 files per genome, 6 files total)
-check_files();
 
 # Hash to store the results
 my %results;
 
-# total gene length for A A1 A2
-my %totlengths;
+# total gene and exon lengths for A A1 A2
+my %seqlengths;
 
-my $create_exon_file = 0; 
 my %exon_details = ();
 my %exon_results;
 
-my $exon_output_file = "all_exons.fa";
-if (-s $exon_output_file) {
-	print STDERR "$exon_output_file already exists\n";
-	read_exons($exon_output_file);
-}
-else {
-	$create_exon_file = 1;
+
+# keep track of exon and gene lengths
+my %seq_to_length;
+
+# keep track of which genome exons and genes are from
+my %seq_to_genome;
+
+
+
+###########################
+#
+#   M A I N  L O O P
+#
+###########################
+
+
+# Read exisitng genes and exons files if they already exist, otherwise extract sequences from chromosome files
+my $genes_file = "all_genes.fa";
+my $exons_file = "all_exons.fa";
+
+if (-s $genes_file){
+	print STDERR "Will use existing $genes_file file\n";
+	read_sequences($genes_file, "gene");
+} 
+
+if (-s $exons_file){
+	print STDERR "Will use existing $exons_file file\n";
+	read_sequences($exons_file, "exon");
 }
 
-my $output_file = "all_genes.fa";
-# does genes file exist? If so just need to read contents of that and the associated genome file
-if (-s $output_file){
-	print STDERR "$output_file already exists\n";
-	read_files($output_file);	
+unless(-s $genes_file && -s $exons_file){
+	print STDERR "Need to generate $genes_file and/or $exons_file\n";
+	extract_sequences($genes_file, $exons_file);	
 }
-# otherwise, need to create files
- else{
-	print STDERR "Need to create $output_file\n";
-	print STDERR "Need to create $exon_output_file\n" if ($create_exon_file);
-	extract_genes($output_file, $create_exon_file, $exon_output_file);
-}
-	
-
-my $date;
 
 ##################
 #				 #
@@ -91,24 +110,12 @@ my $date;
 #				 #
 ##################
 
-$date = `date`;
-print STDERR "Blasting EXONS against $assembly_file at $date\n";
+blast($exons_file, "exon");
+blast($genes_file, "gene");
 
-blast($exon_output_file);
+print_output("exon");
+print_output("gene");	
 
-$date = `date`;
-print STDERR "Finished blasting EXONS against $assembly_file at $date\n";
-
-
-$date = `date`;
-print STDERR "Blasting GENES against $assembly_file at $date\n";
-
-blast($output_file);
-
-$date = `date`;
-print STDERR "Finished blasting GENES against $assembly_file at $date\n";
-print_output();
-	
 exit();
 	
 	
@@ -125,236 +132,277 @@ sub check_files {
 	my @files = readdir(DIR);
 
 	# Check if species A genome and gff files are present
-	foreach my $genome_type (@species_A){
-		die "Can't find ${genome_type}.annots.gff in $species_dir\n"    unless ("${genome_type}.annots.gff"    ~~ @files);
-		die "Can't find ${genome_type}.seq.masked.fa in $species_dir\n" unless ("${genome_type}.seq.masked.fa" ~~ @files);
+	foreach my $genome_type (@haplotypes){
+		die "Can't find ${genome_type}.annots.gff in $species_dir\n" unless ("${genome_type}.annots.gff" ~~ @files);
+		
+		unless (("${genome_type}.seq.masked.fa" ~~ @files) or ("${genome_type}.seq.masked.fa.gz" ~~ @files)){
+			die "Can't find ${genome_type}.seq.masked.fa or {genome_type}.seq.masked.fa.gz in $species_dir\n" 			
+		}
 	}		
 }	
 
-# If all_genes.fa already exists, read file plus genome file
-sub read_files {
+
+# Either exons or genes
+sub read_sequences {
 	
-	my ($genes_file) = @_;
-	open GENES, "<$genes_file" or die "can't open $genes_file\n";
-	my $fasta_file = new FAlite(\*GENES);
+	my ($file, $type) = @_;
+		
+	open SEQS, "<$file" or die "Can't open $file\n";
+	my $fasta_file = new FAlite(\*SEQS);
 	while(my $entry = $fasta_file->nextEntry){
-		my ($id) = $entry->def =~ m/>([\d\w]*)/; 				
-		# add sequence details to hash
-		#$cds_details{$id}{seq}    = $entry->seq;
-		$cds_details{$id}{length} = length($entry->seq);
 		
-		my ($genome) = $id =~ m/(A\d?)_/; 
-		$totlengths{$genome} += length($entry->seq);
-	}
+		my $length = length($entry->seq);
+		my ($id, $genome) = $entry->def =~ m/>($type\d+) CDS=(A\d?)_/; 				
 
-	close GENES;
+		# need to skip of short exons but also keep track of them so we can skip them later
+		# when we process the BLAST output. This is necessary if someone changes the value of -e 
+		# but uses pre-existing BLAST output
+		if($type eq 'exon' && $length < $min_exon_length){
+			$exons_to_skip{$id} = 1;
+			next;
+		}
+			
+		# track length of sequence and haplotype details for the current sequence
+		$seq_to_length{$id} = $length;
+		$seq_to_genome{$id} = $genome;
+		
+		# also keep track of sum length of this type of sequence
+		$seqlengths{$type}{$genome} += $length;
 
-	# Now, process all genome FASTA files
-	my $genome_seq = {}; # to contain known genome sequence in an anonymous hash, where key is sequence ID, and value is sequence
-
-	foreach my $genome (@species_A){
-		read_genome($genome);
-	}
+		# keep track of how many genes/exons there were for this genome
+		$genomes_to_count{$type}{$genome}++; 				
+	}	
+	close SEQS;
 }
 
-sub read_exons {
-	
-	my ($exons_file) = @_;
-	open EXONS, "<$exons_file" or die "can't open $exons_file\n";
-	my $fasta_file = new FAlite(\*EXONS);
-	while (my $entry = $fasta_file->nextEntry) {
-		my ($id) = $entry->def =~ m/>([\d\w]*)/;
-		$exon_details{$id}{length} = length($entry->seq);
-	}
-	close EXONS;
-}
 
-sub extract_genes {
-		
-	#Output the sequences
-	my $out_file = shift;
-	my $create_exon = shift;
-	my $exon_out = shift;
-	
-	open EXONOUT, ">$exon_out" or die "can't open $exon_out\n" if ($create_exon);
-	open OUT, ">$out_file" or die "can't open $out_file\n";			
-	
-	foreach my $genome (@species_A) {
-		
-		read_genome($genome);
+# will possibly want to create two files
+# 1) sequences of full-length genes (excluding UTRs but including introns)
+# 2) sequences of individual CDSs (exons)
 
+sub extract_sequences {
+
+	my ($genes_file, $exons_file) = @_;
+	
+	# now need to read all of the chromosome sequences for each genome
+	read_genome();
+
+	# which files do we need to create?
+	my ($need_genes, $need_exons) = (0, 0);
+	$need_genes = 1 unless (-s $genes_file);
+	$need_exons = 1 unless (-s $exons_file);
+	
+	# will have to create at least one of the following
+	open GENES, ">$genes_file" or die "can't open $genes_file\n" if ($need_genes);
+	open EXONS, ">$exons_file" or die "can't open $exons_file\n" if ($need_exons);
+
+	my $exon_count = 0;
+	
+	foreach my $genome (@haplotypes) {
+			
 		# Process GFF file containing known genes of Species A
 		open GFF, "<$species_dir/$genome.annots.gff" or die "Can't open $genome.annots.gff\n";
+	
+		# keep track of unique genes and exons in each genome
+		my %genes;
+		my %exons;
 		
 		while (<GFF>) {
+			# only want to consider CDS entries that belong to each gene
 			next unless ($_ =~ m/CDS/);
-	
+		
 			my @gff_line = split(/\t/, $_);
-	
+
 			# extract gene number to form ID
 			my ($gene) = $gff_line[8] =~ m/gene_index (\d+)/;
+		
+			# keep track of unique genes
+			$genes{$gene} = 1;
 			
 			my $id = $genome . "_" . $gene; # id = A1_35
-			
+		
 			# add chromosome, strand, length, and coordinate info to hash for each CDS
-			($cds_details{$id}{chr})  = $gff_line[0] =~ m/chr(\d+)/;
-			$cds_details{$id}{strand} = $gff_line[6];
-			push(@{$cds_details{$id}{coords}}, $gff_line[3], $gff_line[4]); 
+			my ($chr) = $gff_line[0] =~ m/chr(\d+)/;
+			my $strand = $gff_line[6];
+			my ($start, $end) = ($gff_line[3], $gff_line[4]);
+			my $length = $end - $start + 1;
+
+			$cds_details{$id}{chr}    = $chr;
+			$cds_details{$id}{strand} = $strand;
+			push(@{$cds_details{$id}{coords}}, $start, $end); 
+			
+			# can now write to exon file if needed
+			if ($need_exons){
+				# keep track of unique exons for current haploptype (using coordinates as key) and total number of exons (for all haplotypes)
+				$exons{"$start $end"} = 1;
+				$exon_count++;
+
+				# store details of current length, and total length as well as which haplotype this sequence belongs to
+				my $exonid = "exon$exon_count";
+
+				# skip if exons are shorter than a minimum length which might interfere with BLAST
+				# but also keep track of exon ID
+				if ($length < $min_exon_length){
+					$exons_to_skip{$exonid} = 1;
+					next;
+				}
+						
+				$seq_to_length{$exonid} = $length;
+				$seqlengths{exon}{$genome} += $length;
+				$seq_to_genome{$exonid} = $genome;
+				
+				# extract sequence
+				my $seq = substr ($genomes{$genome}{$chr}, $start - 1, $length);
+
+				# reverse complement sequence?
+				$seq = revcomp($seq) if ($strand eq '-');
+
+				# tidy sequence
+				$seq = tidy_seq($seq);
+				print EXONS ">$exonid CDS=$id location=chr$chr $start-$end $strand\n$seq\n";
+			}
+			
+			# keep track of how many sequences there were for this haplotype
+			$genomes_to_count{gene}{$genome} = keys %genes;
+			$genomes_to_count{exon}{$genome} = keys %exons;
+			
 		}	
 		close GFF;
 	}
+
+	close(EXONS) if ($need_exons);
 	
+	# if we get here and the genes file already exists, then we don't need to go any further
+	return unless ($need_genes);
+
+	my $gene_count = 0;
+
 	for my $cds (keys %cds_details) {
 		# cds = "A_15";
 		
 		# to store results, split ID into separate genome and CDS ID
 		my ($genome) = $cds =~ m/(A\d?)_/; 
 		
-		if ($create_exon) {
-			my $size = (@{$cds_details{$cds}{coords}});
-			my $exon_tag = 0; # counts the number of exons in each gene
-			for (my $j = 1; $j <= $size; $j+=2) {
-				my $i = $j - 1;
-				my $id = "$cds" . "_" . $exon_tag;
-				my $exon_length = ${$cds_details{$cds}{coords}}[$j] - ${$cds_details{$cds}{coords}}[$i] + 1;
-				$exon_details{$id}{length} = $exon_length;
-				my $seq = substr ($genomes{$genome}{$cds_details{$cds}{chr}}, ${$cds_details{$cds}{coords}}[$i] - 1, $exon_length);
-				$seq = revcomp($seq) if ($cds_details{$cds}{strand} eq '-');
-				$seq= tidy_seq($seq);
-				print EXONOUT ">$id $cds_details{$cds}{chr} ${$cds_details{$cds}{coords}}[$i]-${$cds_details{$cds}{coords}}[$j]" .
-											  " $cds_details{$cds}{strand}\n$seq\n";
-				$exon_tag++;
-			}
-		}
-			
-			
-		
-		# get lowest & highest coordiantes for each CDS
+		# get lowest & highest coordinates for each CDS
 		my $min = min(@{$cds_details{$cds}{coords}});
 		my $max = max(@{$cds_details{$cds}{coords}});	
 		my $cds_length = ($max - $min + 1);
-		$cds_details{$cds}{length} = $cds_length;
-		
-		$totlengths{$genome} += $cds_length;
-			
+		$seqlengths{gene}{$genome} += $cds_length;
+					
 		# extract sequence from chromosome
 		my $sequence = substr ($genomes{$genome}{$cds_details{$cds}{chr}}, $min - 1, $cds_length);
 		
 		# reverse complement sequence?
 		$sequence = revcomp($sequence) if ($cds_details{$cds}{strand} eq '-');
 				
-		# add sequence to hash
-		$cds_details{$cds}{seq} = $sequence; 
-		#print "$cds\n";
 		# tidy sequence
 		$sequence = tidy_seq($sequence);
 		
-		#min - max?
-		print OUT ">$cds $cds_details{$cds}{chr} $min-$max $cds_details{$cds}{strand}\n$sequence\n";
-	}
-	close OUT;
-	close EXONOUT if ($create_exon);
+		$gene_count++;
+		my $geneid = "gene$gene_count";				
+		$seq_to_length{$geneid} = $cds_length;
+		$seq_to_genome{$geneid} = $genome;
 
+		print GENES ">$geneid CDS=$cds $cds_details{$cds}{chr} $min-$max $cds_details{$cds}{strand}\n$sequence\n";
+		
+	}
+	close GENES;
 }
 
 
 sub blast {
 	
-	my ($GENES) = @_;
-	# format BLAST databases if not already done
-	unless (-s "$GENES.xni")         {system("xdformat -n -I $GENES") == 0 or die}
-	unless (-s "$assembly_file.xni") {system("xdformat -n -I $assembly_file")  == 0 or die}
-	my $blast_file = ($GENES =~ /genes/) ? $assembly_file . ".gene.blast.out" : $assembly_file . ".exon.blast.out";
+	my ($file, $type) = @_;
 	
+	# format BLAST databases if not already done
+	unless (-s "$file.xni")          {system("xdformat -n -I $file")           == 0 or die "Can't run xdformat on $file"}
+	unless (-s "$assembly_file.xni") {system("xdformat -n -I $assembly_file")  == 0 or die "Can't run xdformat on $assembly_file"}
+		
+	my ($assembly_id) = $assembly_file =~ m/([A-Z]\d{1,2})_/;
+	my $blast_file = "$assembly_id.$type.blast.out";
+
+	my $date = `date`;
 	unless (-e "$blast_file"){ 
-		system("qstack.pl -s 50 -d -g -h1 -i 80 -w $word_min -W $wink $assembly_file $GENES > $blast_file") == 0 or die "Can't run qstack.pl\n";
+		print STDERR "Starting BLAST job at $date\n";
+
+		# will want to use a lower BLAST score if searching exons
+		my $score = 50;
+		$score = $min_exon_length if ($type eq 'exon');
+		
+		# ideally want to specify -m, -n, -q, and -r as well but will have to change qstack.pl first
+		my $params = "-s $score -M 1 -N -1 -Q 3 -R 3 -d -g -h1 -i 80 -w $word_min -W $wink";
+#		my $params = "-s $score -m 1 -n -1 -q 3 -r 3 -d -g -h1 -i 80 -w $word_min";
+		
+		system("qstack.pl $params $assembly_file $file > $blast_file") == 0 or die "Can't run qstack.pl\n";
+		$date = `date`;
+		print STDERR "Finished BLAST job at $date\n";
 	}
 
+
+	# Process BLAST output file
 	open(my $blast, "<$blast_file") or die "can't open $blast_file";
 	
 	# then open BLAST output
 	while (<$blast>) {
 		my ($qid, $sid, $E, $N, $s1, $s, $len, $idn, $pos, $sim, $pct, $ppos, $qg, $qgl, $sg, $sgl, $qf, $qs, $qe, $sf, $ss, $se, $gr) = split;
-		#print;
-		my $gene_length = ($GENES =~ /genes/) ? $cds_details{$qid}{length} : $exon_details{$qid}{length};
+
+		# is this a short exon that we need to skip?
+		next if exists $exons_to_skip{$qid};
 		
-		# to store results, split QID into separate genome and CDS ID
-		my ($genome, $cds_id) = $qid =~ m/(A.?)_(\d+)/; 
-		# do we have a match over 95% of the length and of the percent identity of the gene?
-		if ( ($len >= ($min_length / 100) * $gene_length) && ($pct >= $identity) ){	
-			
-			if ($GENES =~ /genes/) {
-				$results{$genome}{blast}++;
-				$results{$genome}{length} += $gene_length;
-			}
-			else {
-				$exon_results{$genome}{blast}++;
-				$exon_results{$genome}{length} += $gene_length;
-			}
+		my $length = $seq_to_length{$qid};
+		my $genome = $seq_to_genome{$qid};
+
+		# do we have a match over 95% of the length of the gene/exon with at least 95% identity?
+		# if so just keep track of how many queries matched, and the total length of the match
+		if ( ($len >= ($min_percent_length / 100) * $length) && ($pct >= $identity) ){	
+			$results{$type}{$genome}{blast}++;
+			$results{$type}{$genome}{length} += $len;
 		}
 	}
+	close($blast);
 }
 
 
 sub print_output {
 	
-	my ($assem) = $assembly_file =~ m/(\w\d+)/;
+	my ($type) = @_;
 
-	#contigs or scaffolds
-	my ($name) = $assembly_file =~ m/_(\w+)/;
+	my ($assembly_id) = $assembly_file =~ m/(\w\d{1,2})_/;	
+	my $file_name = "${assembly_id}.$type.csv";
 	
-	my $file_name;
-	if ($assem) {
-		# Append to results file if exists, else create one
-		$file_name = $assem . "_" . $name . "_" . "genes.csv";
-	}
-	else {
-		$file_name = $assembly_file . "_" . "genes.csv";
-	}
 
-	if (-e $file_name) {
-		open(OUT, ">>", "$file_name") or die "Can't append to $file_name\n";
-	} else {
-		open(OUT, ">", "$file_name") or die "Can't create $file_name\n";
-		print OUT "Assembly name,";
-		print OUT "Number of CDSs in A,Total length of CDSs in A,Percent of CDSs in A,Percent of Total length of CDSs in A," . 
-				  "Number of Exons in A,Total length of Exons in A,Percent of Exons in A,Percent of Total length of Exons in A,";
-		print OUT "Number of CDSs in A1,Total length of CDSs in A1,Percent of CDSs in A1,Percent of Total length of CDSs in A1," .
-				  "Number of Exons in A1,Total length of Exons in A1,Percent of Exons in A1,Percent of Total length of Exons in A1,";
-		print OUT "Number of CDSs in A2,Total length of CDSs in A2,Percent of CDSs in A2,Percent of Total length of CDSs in A2" .
-				  "Number of Exons in A2,Total length of Exons in A2,Percent of Exons in A2,Percent of Total length of Exons in A2\n";
-	}
-	
-	if ($assem) {
-		print OUT "$assem";
-	}
-	else {
-		print OUT "$assembly_file";
-	}
+	open(OUT, ">", "$file_name") or die "Can't create $file_name\n";
 
-	foreach my $genome (@species_A) {
-		# Print results
-		print "Number of matching CDSs in $genome: " . $results{$genome}{blast} . "\n";
-		print "Number of ALL CDSs in $genome: " . $num_genes_in_A . "\n";
-		print "Total length of matching CDSs in $genome: " . $results{$genome}{length} . "\n";
-		print "Total length of ALL CDSs in $genome: " . $totlengths{$genome} . "\n\n";
+	# print out header line for CSV file
+	print OUT "Assembly name,";
+	foreach my $genome (@haplotypes) {
+		print OUT "Number of ${type}s found in $genome,% of maximum possible ${type}s in $genome,Total length of ${type}s in $genome,% of maximum possible $type length in $genome,"; 
+	}
+	print OUT "\n";			
+
+
+	# Print results
+	print OUT "$assembly_id";	
+
+	print "\n\n$type results for assembly $assembly_id\n\n";
+	foreach my $genome (@haplotypes) {
+		print "Processing genome $genome\n";
+
+		print "Total number of ${type}s present in genome $genome: $genomes_to_count{$type}{$genome}\n";
+		my $percent1 = sprintf("%.2f", $results{$type}{$genome}{blast} / $genomes_to_count{$type}{$genome} * 100);
+		print "Number of ${type}s from genome $genome found in assembly: $results{$type}{$genome}{blast} (%$percent1)\n";
 		
-		print "Number of matching exons in $genome: " . $exon_results{$genome}{blast} . "\n";
-		print "Number of ALL exons in $genome: " . (keys %exon_details) . "\n";
-		print "Total length of matching exons in $genome: " . $exon_results{$genome}{length} . "\n\n";
-		if (exists $results{$genome}{blast}) {
-			print OUT ",$results{$genome}{blast},$results{$genome}{length},"; 
-			printf OUT "%.2lf,%.2lf", ($results{$genome}{blast} / $num_genes_in_A * 100), ($results{$genome}{length} / $totlengths{$genome} * 100);
+		print "Total length of all possible ${type}s in $genome: $seqlengths{$type}{$genome} bp\n";
+		my $percent2 = sprintf("%.2f", $results{$type}{$genome}{length} / $seqlengths{$type}{$genome} * 100);
+		print "Total length of ${type}s from $genome found in assembly: $results{$type}{$genome}{length} bp (%$percent2)\n";
+		
+		# print out results to CSV file (but only if there are results)
+		if (exists $results{$type}{$genome}{blast}) {
+			print OUT ",$results{$type}{$genome}{blast},$percent1,$results{$type}{$genome}{length},$percent2"; 
 		} else {
 			print OUT ",0,0,0,0";
-		}
-		if (exists $exon_results{$genome}{blast}) {
-			print OUT ",$exon_results{$genome}{blast},$exon_results{$genome}{length},";
-			printf OUT "%.2lf, %.2lf", ( $exon_results{$genome}{blast} / (keys %exon_details) ), ($exon_results{$genome}{length} / $totlengths{$genome} * 100);
-		}
-		else {
-			print OUT ",0,0,0,0";
-		}
+		}		
+		print "\n";
 	}
 	print OUT "\n";
 	close(OUT);
@@ -362,18 +410,35 @@ sub print_output {
 }
 
 
+# will always need to process process the known genome of species A
+# this consists of two haplotype geneomes (A1 + A2), each of which has 3 chromosomes
+# but there is also a reference genome too (an averaged version of A1 and A2)
 sub read_genome {
 	
-	my $genome = shift;
-	
-	open GENOME, "<$species_dir/$genome.seq.masked.fa" or die "can't open $genome.seq.masked.fa\n";
-	my $fasta_file = new FAlite(\*GENOME);
+	foreach my $genome (@haplotypes){
+		my $file = "$species_dir/$genome.seq.masked.fa";
 
-	while(my $entry = $fasta_file->nextEntry){
-		my ($chr) = $entry->def =~ m/\.chr(\d+)/;
-		$genomes{$genome}{$chr} = uc $entry->seq; #everything after '.' on fasta header
+		# If filename doesn't exist but a gzipped version does exist, then use that instead
+		if (! -e $file && -e "$file.gz"){
+			$file = $file . ".gz";
+		}
+		
+		# if dealing with gzipped FASTA file, treat differently
+		my $input;
+	    if($file =~ m/\.gz$/){
+	            open($input, "gunzip -c $file |") or die "Can't open a pipe to $file\n";
+	    } else{
+	            open($input, "<", "$file") or die "Can't open $file\n";
+	    }
+
+		my $fasta_file = new FAlite(\*$input);
+
+		while(my $entry = $fasta_file->nextEntry){
+			my ($chr) = $entry->def =~ m/\.chr(\d+)/;
+			$genomes{$genome}{$chr} = uc $entry->seq; #everything after '.' on fasta header
+		}
+		close $input;
 	}
-	close GENOME;
 }	
 
 
@@ -402,7 +467,7 @@ sub tidy_seq{
     return ($output_seq);
 }
 
-
+# reverse complement sequence
 sub revcomp{
 	my ($seq) = @_;
 	$seq = uc($seq);
