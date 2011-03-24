@@ -285,7 +285,7 @@ sub sequence_statistics{
 	store_results($desc, $mean) if ($csv);
 
 	# median sequence size
-	my $median = ${$data{$type}{lengths}}[$count/2];
+    my $median = (sort{$a <=> $b} @{$data{$type}{lengths}})[$count/2];
 	$desc = "Median $type size";
 	printf "%${w}s %10d\n", $desc, $median;
 	store_results($desc, $median) if ($csv);
