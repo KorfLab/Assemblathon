@@ -23,7 +23,7 @@ $opt_l = 95 if (!$opt_l);
 $opt_e = 30 if (!$opt_e);
 
 die " 
-Usage: generate_results.pl [blast_options] <assembly_file> <species_dir>
+Usage: blast_genes.pl [blast_options] <assembly_file> <species_dir>
 blast_options:
  -i <minimum percentage identity required (80-100%)> - default = $opt_i
  -l <minimum percentage length of gene that must match assembly contig (0-100%)> - default = $opt_l
@@ -330,8 +330,8 @@ sub blast {
 		$score = $min_exon_length if ($type eq 'exon');
 		
 		# ideally want to specify -m, -n, -q, and -r as well but will have to change qstack.pl first
-		my $params = "-s $score -M 1 -N -1 -Q 3 -R 3 -d -g -h1 -i 80 -w $word_min -W $wink";
-#		my $params = "-s $score -m 1 -n -1 -q 3 -r 3 -d -g -h1 -i 80 -w $word_min";
+#		my $params = "-s $score -M 1 -N -1 -Q 3 -R 3 -d -g -h1 -i 80 -w $word_min -W $wink";
+		my $params = "-s $score -m 1 -n -1 -q 3 -r 3 -d -g -h1 -i 80 -w $word_min";
 		
 		system("qstack.pl $params $assembly_file $file > $blast_file") == 0 or die "Can't run qstack.pl\n";
 		$date = `date`;
