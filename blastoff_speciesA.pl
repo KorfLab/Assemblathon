@@ -22,7 +22,7 @@ my $MIN   = 100;
 my $MAX   = 6400;
 
 die "
-usage: blastoff_2.pl [options] <assembly.gz> <species_dir>
+usage: blastoff_speciesA.pl [options] <assembly.gz> <species_dir>
 options:
   -m <int>	 mimimum read size [$MIN]
   -n <int> 	 maximum read size [$MAX]
