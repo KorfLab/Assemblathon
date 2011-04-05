@@ -86,9 +86,9 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 	}
 	close $out;
 }
-unless (%generated) {
-	for (my $r = $MIN; $r <= $MAX; $r*=2) {
-		my $count = $ref_tag ? `grep -c ">" $ref_tag.fragments2.$SEED.$r.$READS` : `grep -c ">" fragments2.$SEED.$r.$READS` ;
+for (my $r = $MIN; $r <= $MAX; $r*=2) {
+	unless ($generated{$r}) {
+		my $count = $ref_tag ? `grep -c ">" $ref_tag.fragments2.$SEED.$r.$READS` : `grep -c ">" fragments2.$SEED.$r.$READS`;
 		$generated{$r} = $count / 2;
 	}
 }
