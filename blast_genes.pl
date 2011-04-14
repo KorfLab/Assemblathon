@@ -365,9 +365,9 @@ sub blast {
 			$matched{$qid}++;
 		} 
 	}
-	print $type . "ID,Number of scaffold matches\n";
+	print $type . "ID,Number of scaffold matches," . $type . " length\n";
 	foreach my $qid (sort {$matched{$b} <=> $matched{$a}} keys %matched ) {
-		print $qid . ",$matched{$qid}\n";
+		print $qid . ",$matched{$qid},$seq_to_length{$qid}\n";
 	}
 	print "\n";
 	close($blast);
