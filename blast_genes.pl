@@ -342,6 +342,9 @@ sub blast {
 	# Process BLAST output file
 	open(my $blast, "<$blast_file") or die "can't open $blast_file";
 	
+	# keep track of which gene/exon already produced a match so we don't count it multiple times
+	my %matched;
+	
 	# then open BLAST output
 	while (<$blast>) {
 		my ($qid, $sid, $E, $N, $s1, $s, $len, $idn, $pos, $sim, $pct, $ppos, $qg, $qgl, $sg, $sgl, $qf, $qs, $qe, $sf, $ss, $se, $gr) = split;
@@ -351,14 +354,22 @@ sub blast {
 		
 		my $length = $seq_to_length{$qid};
 		my $genome = $seq_to_genome{$qid};
-
+	
 		# do we have a match over 95% of the length of the gene/exon with at least 95% identity?
 		# if so just keep track of how many queries matched, and the total length of the match
-		if ( ($len >= ($min_percent_length / 100) * $length) && ($pct >= $identity) ){	
-			$results{$type}{$genome}{blast}++;
-			$results{$type}{$genome}{length} += $len;
-		}
+		if ( ($len >= ($min_percent_length / 100) * $length) && ($pct >= $identity) ){
+			if (!exists $matched{$qid} ) {
+				$results{$type}{$genome}{blast}++;
+				$results{$type}{$genome}{length} += $len;
+			}
+			$matched{$qid}++;
+		} 
 	}
+	print $type . "ID,Number of scaffold matches\n";
+	foreach my $qid (sort {$matched{$b} <=> $matched{$a}} keys %matched ) {
+		print $qid . ",$matched{$qid}\n";
+	}
+	print "\n";
 	close($blast);
 }
 
