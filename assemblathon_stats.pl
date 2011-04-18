@@ -22,17 +22,19 @@ use List::Util qw(sum max min);
 #
 ###############################################
 
-my $limit; # limit processing of data to first $limit sequences (for quick testing)
-my $graph; # produce some output ready for Excel or R
-my $csv;   # produce CSV output file of results
+my $limit;   # limit processing of data to first $limit sequences (for quick testing)
+my $graph;   # produce some output ready for Excel or R
+my $csv;     # produce CSV output file of results
+my $n_limit; # how many N characters should be used to split scaffolds into contigs
 
 GetOptions ("limit=i" => \$limit,
 			"csv"     => \$csv, 
-			"graph"  => \$graph);
+			"graph"   => \$graph,
+			"n=i"     => \$n_limit);
 
 # set defaults
 $limit = 1000000000 if (!$limit);
-
+$n_limit = 25 if (!$n_limit);
 
 
 # check we have a suitable input file
@@ -41,6 +43,7 @@ options:
 	-limit <int> limit analysis to first <int> sequences (useful for testing)
 	-csv         produce a CSV output file of all results
 	-graph       produce a CSV output file of NG(X) values (NG1 through to NG99), suitable for graphing
+	-n <int>     specify how many consecutive N characters should be used to split scaffolds into contigs
 ";
 
 die "$usage" unless (@ARGV == 1);
@@ -54,7 +57,6 @@ my ($file) = @ARGV;
 #
 ###############################################
 
-my $n_limit = 25;						# how many Ns are we using to split scaffolds into contigs?
 my $contig_file = "tmp_contigs$$.fa";	# might need to create a temp output file for contigs
 my $known_genome_size = 112500000;  	# the approximate genome size of species A
 my $scaffolded_contigs = 0;				# how many contigs that are part of scaffolds (sequences must have $n_limit consecutive Ns)
