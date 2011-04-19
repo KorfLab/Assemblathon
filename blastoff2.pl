@@ -1,4 +1,15 @@
 #!/usr/bin/perl
+#
+# blastoff2.pl
+#
+# A script to match pairs of sequences at increasing distances from a known genome to an assembly
+#
+# Authors: Ian Korf, Ken Yu, and Keith Bradnam: Genome Center, UC Davis
+# This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
+# 
+# Last updated by: $Author$
+# Last updated on: $Date$
+
 use strict; use warnings;
 use FAlite; use DataBrowser;
 use Getopt::Std;
@@ -8,7 +19,7 @@ getopts('m:n:r:sco');
 my $READS = 1000;
 my $SEED  = 1;
 my $MIN   = 100;
-my $MAX   = 25600;
+my $MAX   = 102400;
 
 die "
 usage: blastoff2.pl [options] <reference.gz> <assembly.gz>
@@ -27,7 +38,7 @@ $READS = $opt_r if $opt_r;
 $SEED  = $opt_s if $opt_s;
 $MIN   = $opt_m if $opt_m;
 $MAX   = $opt_n if $opt_n;
-my $CSV = $opt_c ? 1 : 0;
+my $CSV  = $opt_c ? 1 : 0;
 my $SAVE = $opt_o ? 1 : 0;
 
 ## Variables used for saving csv and blast output
@@ -36,9 +47,7 @@ my ($assembly_tag) = $ASSEMBLY =~ m/(\w\d+)_/;
 # contigs or scaffolds
 my ($name) = $ASSEMBLY =~ m/_(\w+)/ if ($assembly_tag);
 # A2
-my ($ref_tag) = $REFERENCE =~ m/(\w\d?)/;
-
-process_csv_output() if ($CSV);
+my ($ref_tag) = $REFERENCE =~ m/(\w\d?)\.seq/;
 
 die "bad seed" unless $SEED == int $SEED and $SEED > 0 and $SEED < 10;
 srand($SEED);
@@ -93,6 +102,9 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 	}
 }
 
+# open file for CSV output and print header line
+process_csv_output() if ($CSV);
+
 #  blasts
 for (my $r = $MIN; $r <= $MAX; $r*=2) {
 	my $frags = $ref_tag ? $ref_tag . ".fragments2.$SEED.$r.$READS" : "fragments2.$SEED.$r.$READS";
@@ -127,23 +139,33 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 			strand => $qs,
 		}
 	}
-	
 	my $tolerance = $r * 0.9;
+	my $tolerance_low  = $r * 0.9;
+	my $tolerance_high = $r * 1.1;
 	my $count = 0;
+	
 	OUTER: foreach my $num (keys %hit) {
 		my $left  = $hit{$num}{L};
 		my $right = $hit{$num}{R};
 		next unless defined $left and defined $right;
-		my $found = 0;
 		foreach my $hsp1 (@$left) {
 			foreach my $hsp2 (@$right) {
 				next if $hsp1->{parent} ne $hsp2->{parent};
 				next if $hsp1->{strand} ne $hsp2->{strand};
 				my $distance = abs($hsp1->{start} - $hsp2->{start});
-				my $diff = abs($distance - $r);
-				if ($diff <= $tolerance) {
+
+# OLDER LOGIC FOR COUNTING MATCHES
+#				my $diff = abs($distance - $r);
+#				if ($diff <= $tolerance) {
+#					$count++;
+#					next OUTER;
+#				}
+
+				# Newer, slightly more restrictive, logic. The distance between the pair of fragments in the assembly
+				# must be 90-110% of the distance between fragments in the known genome
+				if ($distance >= $tolerance_low && $distance <= $tolerance_high){
 					$count++;
-					next OUTER;
+					next OUTER;			
 				}
 			}
 		}
