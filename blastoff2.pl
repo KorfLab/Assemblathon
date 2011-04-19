@@ -82,7 +82,7 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 		for (my $i = 0; $i < $reads; $i++) {
 			my $pos1 = 1 + int rand($length{$name} - $r - 200);
 			my $end1 = $pos1 + 99;
-			my ($pos2, $end2) = ($pos1 + $r, $end1 + $r);
+			my ($pos2, $end2) = ($pos1 + $r + 100, $end1 + $r + 100); # this gives a gap of $r between $end1 and $pos2
 			my ($def1, @seq1) = `xdget -n -a $pos1 -b $end1 $REFERENCE $name`;
 			my ($def2, @seq2) = `xdget -n -a $pos2 -b $end2 $REFERENCE $name`;
 			$def1 =~ s/\s//g;
@@ -128,8 +128,8 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 	
 	while (<$blast>) {
 		#print;
-		my ($qid, $sid, $E, $N, $s1, $s, $len, $idn, $pos, $sim, $pct, $ppos,
-			$qg, $qgl, $sg, $sgl, $qf, $qs, $qe, $sf, $ss, $se) = split;
+		my ($qid, $sid, $E, $N, $s1, $s, $len, $idn, $pos, $sim, 
+			$pct, $ppos, $qg, $qgl, $sg, $sgl, $qf, $qs, $qe, $sf, $ss, $se) = split;
 		next unless $len >= 95;
 		my ($side, $num) = split("-", $qid);
 		push @{$hit{$num}{$side}}, {
@@ -139,7 +139,6 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 			strand => $qs,
 		}
 	}
-	my $tolerance = $r * 0.9;
 	my $tolerance_low  = $r * 0.9;
 	my $tolerance_high = $r * 1.1;
 	my $count = 0;
@@ -152,15 +151,7 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 			foreach my $hsp2 (@$right) {
 				next if $hsp1->{parent} ne $hsp2->{parent};
 				next if $hsp1->{strand} ne $hsp2->{strand};
-				my $distance = abs($hsp1->{start} - $hsp2->{start});
-
-# OLDER LOGIC FOR COUNTING MATCHES
-#				my $diff = abs($distance - $r);
-#				if ($diff <= $tolerance) {
-#					$count++;
-#					next OUTER;
-#				}
-
+				my $distance = abs($hsp1->{end}+1 - $hsp2->{start});
 				# Newer, slightly more restrictive, logic. The distance between the pair of fragments in the assembly
 				# must be 90-110% of the distance between fragments in the known genome
 				if ($distance >= $tolerance_low && $distance <= $tolerance_high){
