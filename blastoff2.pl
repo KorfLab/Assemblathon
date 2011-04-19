@@ -120,11 +120,11 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 			$blast_file = "$ASSEMBLY.$REFERENCE.$SEED.$r.$READS.blast.out";
 		}
 		unless (-e "$blast_file"){ 
-			system("qstaq.pl -h 0 -s $minscore $ASSEMBLY $frags > $blast_file") == 0 or die "can't run qstack.pl";
+			system("qstaq.pl -h 0 -s $minscore $ASSEMBLY $frags > $blast_file") == 0 or die "Can't run qstack.pl -h 0 -s $minscore $ASSEMBLY $frags > $blast_file $!";
 		}
 		open($blast, "<$blast_file") or die "can't open $blast_file";
 	} 
-	else { open($blast, "qstaq.pl -h 0 -s $minscore $ASSEMBLY $frags |") or die; }
+	else { open($blast, "qstaq.pl -h 0 -s $minscore $ASSEMBLY $frags |") or die "Can't run qstack.pl -h 0 -s $minscore $ASSEMBLY $frags $!"; }
 	
 	while (<$blast>) {
 		#print;
