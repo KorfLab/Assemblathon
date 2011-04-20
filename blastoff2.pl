@@ -82,6 +82,7 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 		for (my $i = 0; $i < $reads; $i++) {
 			my $pos1 = 1 + int rand($length{$name} - $r - 200);
 			my $end1 = $pos1 + 99;
+#            my ($pos2, $end2) = ($pos1 + $r, $end1 + $r);
 			my ($pos2, $end2) = ($pos1 + $r + 100, $end1 + $r + 100); # this gives a gap of $r between $end1 and $pos2
 			my ($def1, @seq1) = `xdget -n -a $pos1 -b $end1 $REFERENCE $name`;
 			my ($def2, @seq2) = `xdget -n -a $pos2 -b $end2 $REFERENCE $name`;
@@ -120,11 +121,11 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 			$blast_file = "$ASSEMBLY.$REFERENCE.$SEED.$r.$READS.blast.out";
 		}
 		unless (-e "$blast_file"){ 
-			system("qstaq.pl -h 0 -s $minscore $ASSEMBLY $frags > $blast_file") == 0 or die "Can't run qstack.pl -h 0 -s $minscore $ASSEMBLY $frags > $blast_file $!";
+			system("qstaq.pl -h 0 -s $minscore $ASSEMBLY $frags > $blast_file") == 0 or die "Can't run qstack.pl $!";
 		}
 		open($blast, "<$blast_file") or die "can't open $blast_file";
 	} 
-	else { open($blast, "qstaq.pl -h 0 -s $minscore $ASSEMBLY $frags |") or die "Can't run qstack.pl -h 0 -s $minscore $ASSEMBLY $frags $!"; }
+	else { open($blast, "qstaq.pl -h 0 -s $minscore $ASSEMBLY $frags |") or die "Can't run qstack.pl $!"; }
 	
 	while (<$blast>) {
 		#print;
@@ -136,11 +137,12 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 			parent => $sid,
 			start  => $ss,
 			end    => $se,
-			strand => $qs,
+			strand => $qf,
 		}
 	}
-	my $tolerance_low  = $r * 0.9;
-	my $tolerance_high = $r * 1.1;
+	
+	my $tolerance_low  = $r * 0.95;
+	my $tolerance_high = $r * 1.05;
 	my $count = 0;
 	
 	OUTER: foreach my $num (keys %hit) {
@@ -149,11 +151,14 @@ for (my $r = $MIN; $r <= $MAX; $r*=2) {
 		next unless defined $left and defined $right;
 		foreach my $hsp1 (@$left) {
 			foreach my $hsp2 (@$right) {
-				next if $hsp1->{parent} ne $hsp2->{parent};
-				next if $hsp1->{strand} ne $hsp2->{strand};
+				next if $hsp1->{parent} ne $hsp2->{parent}; # both fragments must match same contig/scaffold
+				next if $hsp1->{strand} ne $hsp2->{strand}; # both fragments must be in same orientation
+
+				# calculate distance between fragments, but also need to check if we have a reverse strand match
 				my $distance = abs($hsp1->{end}+1 - $hsp2->{start});
-				# Newer, slightly more restrictive, logic. The distance between the pair of fragments in the assembly
-				# must be 90-110% of the distance between fragments in the known genome
+				$distance    = abs($hsp2->{end}+1 - $hsp1->{start}) if ($hsp1->{start} > $hsp2->{start});
+				
+				# The distance between the pair of fragments in the assembly must be 95-105% of the distance between fragments in the known genome
 				if ($distance >= $tolerance_low && $distance <= $tolerance_high){
 					$count++;
 					next OUTER;			
