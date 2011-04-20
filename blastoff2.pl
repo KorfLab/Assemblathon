@@ -67,6 +67,8 @@ while (my $entry = $fasta->nextEntry) {
 	$length{$name} = $len;
 	$total_length += $len;
 }
+
+warn "Processing assembly $assembly_tag, using genome $ref_tag\n";
 print STDERR scalar keys %length, " contigs in reference of $total_length bp\n";
 
 # generate 100 bp paired fragment files if necessary
