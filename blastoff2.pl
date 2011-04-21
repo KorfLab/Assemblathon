@@ -14,7 +14,7 @@ use strict; use warnings;
 use FAlite; use DataBrowser;
 use Getopt::Std;
 use vars qw($opt_r $opt_s $opt_m $opt_n $opt_c $opt_o);
-getopts('m:n:r:sco');
+getopts('m:n:r:s:co');
 
 my $READS = 1000;
 my $SEED  = 1;
@@ -23,7 +23,7 @@ my $MAX   = 102400;
 
 die "
 usage: blastoff2.pl [options] <reference.gz> <assembly.gz>
-opitons:
+options:
   -m <int> mimimum read distance [$MIN]
   -n <int> maximum read distance [$MAX]
   -r <int> read pairs [$READS]
@@ -31,7 +31,7 @@ opitons:
   -c	   creates CSV file [default OFF]
   -o	   saves blast output file [default OFF]
 " unless @ARGV == 2;
-
+exit;
 my ($REFERENCE, $ASSEMBLY) = @ARGV;
 
 $READS = $opt_r if $opt_r;
