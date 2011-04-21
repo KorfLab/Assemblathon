@@ -31,7 +31,7 @@ options:
   -c	   creates CSV file [default OFF]
   -o	   saves blast output file [default OFF]
 " unless @ARGV == 2;
-exit;
+
 my ($REFERENCE, $ASSEMBLY) = @ARGV;
 
 $READS = $opt_r if $opt_r;
