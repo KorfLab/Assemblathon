@@ -12,8 +12,8 @@ use strict; use warnings;
 use Getopt::Std;
 use List::Util qw(min max);
 use FAlite;
-use vars qw($opt_i $opt_w $opt_W $opt_l $opt_e);
-getopts('i:l:w:W:e:');
+use vars qw($opt_i $opt_w $opt_W $opt_l $opt_e $opt_v);
+getopts('i:l:w:W:e:v');
 
 # set default values
 $opt_i = 95 if (!$opt_i);
@@ -30,6 +30,7 @@ blast_options:
  -w <minimum word size> - default = $opt_w
  -W <wink size> - default = $opt_W
  -e <minimum exon size> - default = $opt_e (we can't BLAST very short exons, so just ignore those below min size)
+ -v verbose mode, turns on extra output to show lists of all exons and genes that are found in assembly
 
 (species_dir should include Species A A1 and A2 genome fasta and gff files) 
 " unless (@ARGV == 2);
@@ -365,12 +366,17 @@ sub blast {
 			$matched{$qid}++;
 		} 
 	}
-	print $type . "ID,Number of scaffold matches," . $type . " length\n";
-	foreach my $qid (sort {$matched{$b} <=> $matched{$a}} keys %matched ) {
-		print $qid . ",$matched{$qid},$seq_to_length{$qid}\n";
-	}
-	print "\n";
 	close($blast);
+
+	# print out gene/exon details that match (and how many matches there are)?
+	if($opt_v){
+		print $type . "ID,Number of scaffold matches," . $type . " length\n";
+		foreach my $qid (sort {$matched{$b} <=> $matched{$a}} keys %matched ) {
+			print $qid . ",$matched{$qid},$seq_to_length{$qid}\n";
+		}
+		print "\n";		
+	}
+	
 }
 
 
