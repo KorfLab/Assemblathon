@@ -35,8 +35,8 @@ my ($assembly_ID) = $ASSEMBLY =~ m/^(\w\d+)/;
 my $ECOLI_LENGTH = 4747819;
 
 
-# want to keep track of number of sequences + total length of assembly
-my ($seq_counter, $total_length) = (0, 0);
+# want to keep track of number of sequences + total length of assembly + number of chimeric scaffolds
+my ($seq_counter, $total_length, $chimeric_count) = (0, 0, 0);
 
 # will store sequence lengths of scaffolds in hash (using FASTA def as hash key)
 my %length;
@@ -74,8 +74,7 @@ if($csv){
 	$csv_file =~ s/.fa.gz//;
 	$csv_file .= "_ecoli.csv";
 	open($csv_out, ">", "$csv_file") or die "Can't open $csv_file\n";	
-	print $csv_out "Assembly,Number of E. coli nt in assembly,% of assembly that is E. coli,Number of contaminated scaffolds,% of scaffolds with contamination,% of E. coli genome present in assembly\n";
-}
+	print $csv_out "Assembly,Number of E. coli nt in assembly,% of assembly that is E. coli,Number of contaminated scaffolds,% of scaffolds with contamination,Number of contaminant scaffolds that are chimeric,% of contaminant scaffolds that are chimeric,% of E. coli genome present in assembly\n";}
 
 # only run blast if no blast output file exists
 unless (-s $output) {system("blastn $ASSEMBLY $ECOLI $params -o $output") && die "Can't run blastn\n"}
@@ -161,14 +160,17 @@ print "\n";
 
 my $percent1 = sprintf("%.2f", ($contaminant_bases / $total_length) * 100);
 my $percent2 = sprintf("%.2f", ($counter / $seq_counter) * 100);
+my $percent3 = sprintf("%.2f", ($chimeric_count / $counter) * 100);
 
-print "$contaminant_bases nt from $total_length nt (%$percent1) in the assembly were contaminated with E. coli\n";
-print "\n$counter of $seq_counter scaffolds (%$percent2) contained E. coli contamination\n";
+print "$contaminant_bases nt from $total_length nt (%$percent1) in the assembly were contaminated with E. coli\n\n";
+
+print "$counter of $seq_counter scaffolds (%$percent2) contained E. coli contamination\n";
+print "$chimeric_count of which (%$percent3) were chimeric (between 10-90% contamination)\n\n";
 
 
 
 if($csv){
-	print $csv_out "$assembly_ID,$contaminant_bases,$percent1,$counter,$percent2,";
+	print $csv_out "$assembly_ID,$contaminant_bases,$percent1,$counter,$percent2,$chimeric_count,$percent3,";
 }
 
 # can now calculate how much of E. coli genome was in assembly
@@ -191,10 +193,21 @@ sub print_contamination_details{
 	
 	# if we are processing scaffolds, we do things a little different than with E. coli
 	if($type eq 'scaffold'){
-		print "$counter)\tL=$seq_length\t%E. coli=$percent\n";		
+		print "$counter)\tL=$seq_length\t%E. coli=$percent";		
 		$contaminant_bases += $ecoli_bases;
+
+		# want to keep track of chimeric scaffolds where between 10–90% of the scaffold is E. coli
+		# could use other percentage values. This is very arbitrary.
+		if ($percent >= 10 and $percent <= 90){
+			print "\tChimeric\n";
+			$chimeric_count++;
+		} else{
+			print "\n";
+		}
+
+
 	} elsif($type eq 'ecoli'){
-		print "E. coli genome\tL=$seq_length\t%of genome in scaffolds=$percent\n";
+		print "E. coli genome\tL=$seq_length\t%of genome represented in scaffolds=$percent\n\n";
 		if($csv){
 			print $csv_out "$percent\n";
 		}
