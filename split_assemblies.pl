@@ -25,7 +25,7 @@ my $scaffolded_contig_count = 0;
 my $unscaffolded_contig_count = 0;
 
 # need to create output file for contigs
-my ($contigs) = $seqs =~ m/([A-Z]\d+)/;
+my ($contigs) = $seqs =~ m/(\S+).gz/;
 $contigs .= "_contigs.fa";
 
 open(my $output, ">", "$contigs") or die "Can't write to $contigs file\n";
