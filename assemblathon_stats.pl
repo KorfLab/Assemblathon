@@ -40,7 +40,7 @@ $n_limit = 25       if (!$n_limit);
 
 
 # check we have a suitable input file
-my $usage = "Usage: assemblathon_stats.pl <assembly_file>
+my $usage = "Usage: assemblathon_stats.pl <assembly_scaffolds_file>
 options:
 	-limit <int> limit analysis to first <int> sequences (useful for testing)
 	-csv         produce a CSV output file of all results
@@ -58,7 +58,6 @@ my ($file) = @ARGV;
 #
 ###############################################
 
-my $contig_file = "tmp_contigs$$.fa";	# might need to create a temp output file for contigs
 my $scaffolded_contigs = 0;				# how many contigs that are part of scaffolds (sequences must have $n_limit consecutive Ns)
 my $scaffolded_contig_length = 0;		# total length of all scaffolded contigs
 my $unscaffolded_contigs = 0;			# how many 'orphan' contigs, not part of a scaffold
@@ -192,6 +191,7 @@ sub sequence_statistics{
 		printf "%${w}s %10s\n", $desc, "$percent%";
 		store_results($desc, $percent) if ($csv);
 
+
 		# statistics that describe N regions that join contigs in scaffolds
 
 		# get number of breaks
@@ -201,17 +201,19 @@ sub sequence_statistics{
 		$desc = "Average number of contigs per scaffold";
 		printf "%${w}s %10s\n", $desc, $average_contigs_per_scaffold;
 		store_results($desc, $average_contigs_per_scaffold) if ($csv);
-
+		
 		# now calculate average length of break between contigs
-		# can get length of all Ns by removing all non-N sequence from scaffold sequences
-		# also remove runs of < 25 Ns
-	    my $seq = join('',@{$data{scaffold}{seqs}});  
-		$seq =~ s/[^N{25,}]//g;
-		my $average_break_length = length($seq) / $scaffold_count;
+		# just find all runs of Ns in scaffolds (>=25) and calculate average length
+		my @contig_breaks;
+		foreach my $scaffold (@{$data{scaffold}{seqs}}){
+			while($scaffold =~ m/(N{25,})/g){
+				push(@contig_breaks, length($1));
+			}
+		}	
+		my $average_break_length = sum(@contig_breaks) / @contig_breaks;
 		$desc = "Average length of break (>25 Ns) between contigs in scaffold";
 		printf "%${w}s %10d\n", $desc, $average_break_length;
 		store_results($desc, $average_break_length) if ($csv);
-			
 		return();
 	}
 	
