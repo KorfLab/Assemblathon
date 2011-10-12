@@ -22,19 +22,21 @@ use List::Util qw(sum max min);
 #
 ###############################################
 
-my $limit;   # limit processing of data to first $limit sequences (for quick testing)
-my $graph;   # produce some output ready for Excel or R
-my $csv;     # produce CSV output file of results
-my $n_limit; # how many N characters should be used to split scaffolds into contigs
-
-GetOptions ("limit=i" => \$limit,
-			"csv"     => \$csv, 
-			"graph"   => \$graph,
-			"n=i"     => \$n_limit);
+my $limit;       # limit processing of data to first $limit sequences (for quick testing)
+my $graph;       # produce some output ready for Excel or R
+my $csv;         # produce CSV output file of results
+my $n_limit;     # how many N characters should be used to split scaffolds into contigs
+my $genome_size; # estimated or known genome size (will be used for some stats)
+ 
+GetOptions ("limit=i"       => \$limit,
+			"csv"           => \$csv, 
+			"graph"         => \$graph,
+			"n=i"           => \$n_limit,
+			"genome_size=i" => \$genome_size);
 
 # set defaults
 $limit = 1000000000 if (!$limit);
-$n_limit = 25 if (!$n_limit);
+$n_limit = 25       if (!$n_limit);
 
 
 # check we have a suitable input file
@@ -44,12 +46,11 @@ options:
 	-csv         produce a CSV output file of all results
 	-graph       produce a CSV output file of NG(X) values (NG1 through to NG99), suitable for graphing
 	-n <int>     specify how many consecutive N characters should be used to split scaffolds into contigs
+	-genome_size <int> estimated or known genome size
 ";
 
 die "$usage" unless (@ARGV == 1);
 my ($file) = @ARGV;
-
-
 
 ###############################################
 # 
@@ -58,7 +59,6 @@ my ($file) = @ARGV;
 ###############################################
 
 my $contig_file = "tmp_contigs$$.fa";	# might need to create a temp output file for contigs
-my $known_genome_size = 112500000;  	# the approximate genome size of species A
 my $scaffolded_contigs = 0;				# how many contigs that are part of scaffolds (sequences must have $n_limit consecutive Ns)
 my $scaffolded_contig_length = 0;		# total length of all scaffolded contigs
 my $unscaffolded_contigs = 0;			# how many 'orphan' contigs, not part of a scaffold
@@ -72,7 +72,12 @@ my (@results, @headers);				# arrays to store results (for use with -csv option)
 # make first loop through file, capture some basic info and add sequences to arrays
 process_FASTA($file);
 
-print "\n<-- Information for assembly \'$file\' -->\n\n";
+print "\n---------------- Information for assembly \'$file\' ----------------\n\n";
+
+if(defined($genome_size)){
+	my $mbp_size = sprintf("%.2f", $genome_size / 1000000);
+	printf "%${w}s %10s\n", "Assumed genome size (Mbp)", $mbp_size;
+}
 
 # produce scaffold statistics
 sequence_statistics('scaffold');
@@ -206,8 +211,7 @@ sub sequence_statistics{
 		$desc = "Average length of break (>25 Ns) between contigs in scaffold";
 		printf "%${w}s %10d\n", $desc, $average_break_length;
 		store_results($desc, $average_break_length) if ($csv);
-		
-		
+			
 		return();
 	}
 	
@@ -240,9 +244,9 @@ sub sequence_statistics{
 
 
 	# For scaffold data only, can caluclate the percentage of known genome size 
-	if ($type eq 'scaffold'){		
-		my $percent = sprintf("%.1f",($total_size / $known_genome_size) * 100);
-		$desc = "Total scaffold length as percentage of known genome size";
+	if ($type eq 'scaffold' && defined($genome_size)){		
+		my $percent = sprintf("%.1f",($total_size / $genome_size) * 100);
+		$desc = "Total scaffold length as percentage of assumed genome size";
 		printf "%${w}s %10s\n", $desc, "$percent%";
 		store_results($desc, $percent) if ($csv);		
 	}
@@ -261,13 +265,13 @@ sub sequence_statistics{
 
 	
 	# find number of sequences above certain sizes
-	my %sizes_to_shorthand = (500	  => '500',
-							  1000    => '1K',
-							  10000   => '10K',
-							  100000  => '100K',
-							  1000000 => '1M');
+	my %sizes_to_shorthand = (1000     => '1K',
+							  10000    => '10K',
+							  100000   => '100K',
+							  1000000  => '1M',
+							  10000000 => '10M');
 
-	foreach my $size qw(500 1000 10000 100000 1000000){
+	foreach my $size qw(1000 10000 100000 1000000 10000000){
 		my $matches = grep { $_ > $size } @{$data{$type}{lengths}};
 		my $percent = sprintf("%.1f", ($matches / $count) * 100);
 
@@ -297,7 +301,7 @@ sub sequence_statistics{
  	# 
 	# N50 values
 	#
-	# Includes N(x) values, NG(x) (using known genome size)
+	# Includes N(x) values, NG(x) (using assumed genome size)
 	# and L(x) values (number of sequences larger than or equal to N50 sequence size)
 	##################################################################################
 
@@ -336,40 +340,43 @@ sub sequence_statistics{
 		}		
 	}
 	
-	my $ng_index = 1;
 	my @ng_values;
-	my $ng50_length = 0;
-	
- 	$running_total = 0;
-	$i = 0;
 
-	foreach my $length (reverse sort{$a <=> $b} @{$data{$type}{lengths}}){
-		$i++;
-		$running_total += $length;
-
-		# now do the same for NG values, using known genome size
-		while($running_total > int (($ng_index / 100) * $known_genome_size)){	
-			if ($ng_index == 50){
-				$ng50_length = $length;
-				$desc = "NG50 $type length";
-				printf "%${w}s %10d\n", $desc, $length;
-				store_results($desc, $length) if ($csv);
-
-				$desc = "LG50 $type count";				
-				printf "%${w}s %10d\n", $desc, $i;				
-				store_results($desc, $i) if ($csv);
-			}
-			$ng_values[$ng_index] = $length;
-			$ng_index++;
-		}		
+	# do we have an estimated/known genome size to work with?
+	if(defined($genome_size)){
+		my $ng_index = 1;
+		my $ng50_length = 0;
+		
+		$running_total = 0;
+		$i = 0;
+		
+		foreach my $length (reverse sort{$a <=> $b} @{$data{$type}{lengths}}){
+			$i++;
+			$running_total += $length;
+		
+			# now do the same for NG values, using assumed genome size
+			while($running_total > int (($ng_index / 100) * $genome_size)){	
+				if ($ng_index == 50){
+					$ng50_length = $length;
+					$desc = "NG50 $type length";
+					printf "%${w}s %10d\n", $desc, $length;
+					store_results($desc, $length) if ($csv);
+		
+					$desc = "LG50 $type count";				
+					printf "%${w}s %10d\n", $desc, $i;				
+					store_results($desc, $i) if ($csv);
+				}
+				$ng_values[$ng_index] = $length;
+				$ng_index++;
+			}		
+		}
+		
+		
+		my $n50_diff = abs($ng50_length - $n50_length);
+		$desc = "N50 $type - NG50 $type length difference";
+		printf "%${w}s %10d\n", $desc, $n50_diff;
+		store_results($desc, $n50_diff) if ($csv);
 	}
-
-
-	my $n50_diff = abs($ng50_length - $n50_length);
-	$desc = "N50 $type - NG50 $type length difference";
-	printf "%${w}s %10d\n", $desc, $n50_diff;
-	store_results($desc, $n50_diff) if ($csv);
-
 	# add final value to @n_values and @ng_values which will just be the shortest sequence
 #	$n_values[100] = $min;
 #	$ng_values[100] = $min;
@@ -421,13 +428,14 @@ sub sequence_statistics{
 		open(my $out, ">", "$file_name") or die "Can't create $file_name\n";
 		print $out join (',',"Assembly",1..99), "\n";
 	
-	
+		# make some guesses of what might constitute the unique assembly ID
 		my $assembly_ID = $file;
 		($assembly_ID) = $file =~ m/^([A-Z]\d{1,2})_/ if ($file =~ m/^[A-Z]\d{1,2}_/);
-		
+		($assembly_ID) = $file =~ m/^((bird|snake|fish)_\d+(C|E))_/ if ($file =~ m/^(bird|snake|fish)_\d+C|E_/);
+			
 		# CSV file, with filename in first column
 		print $out "$assembly_ID";
-		
+
 		for (my $i = 1; $i < 100; $i++){
 			# higher NG values might not be present if assembly is poor
 			if (defined $ng_values[$i]){
@@ -459,10 +467,11 @@ sub write_csv{
 	$output =~ s/\.(fa|fasta)$//;
 	$output .= ".csv";
 	
-	# can we find 2 letter assembly code? If not, just use value of $output
-	my $assembly_ID = $output;
+	# make some guesses of what might constitute the unique assembly ID
+	my $assembly_ID = $file;
 	($assembly_ID) = $file =~ m/^([A-Z]\d{1,2})_/ if ($file =~ m/^[A-Z]\d{1,2}_/);
-	
+	($assembly_ID) = $file =~ m/^((bird|snake|fish)_\d+(C|E))_/ if ($file =~ m/^(bird|snake|fish)_\d+C|E_/);
+
 	open(my $out, ">", $output) or die "Can't create $output\n";
 
 	print $out "Assembly,";
