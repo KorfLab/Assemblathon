@@ -210,7 +210,14 @@ sub sequence_statistics{
 				push(@contig_breaks, length($1));
 			}
 		}	
-		my $average_break_length = sum(@contig_breaks) / @contig_breaks;
+		# set break size to zero if there are no Ns in scaffolds
+		my $average_break_length;
+		
+		if(@contig_breaks == 0){
+			$average_break_length = 0;
+		} else{			
+			$average_break_length = sum(@contig_breaks) / @contig_breaks;
+		}
 		$desc = "Average length of break (>25 Ns) between contigs in scaffold";
 		printf "%${w}s %10d\n", $desc, $average_break_length;
 		store_results($desc, $average_break_length) if ($csv);
