@@ -253,11 +253,31 @@ sub sequence_statistics{
 
 
 	# For scaffold data only, can caluclate the percentage of known genome size 
+	# and also the amount of non-useful sequence
 	if ($type eq 'scaffold' && defined($genome_size)){		
 		my $percent = sprintf("%.1f",($total_size / $genome_size) * 100);
 		$desc = "Total scaffold length as percentage of assumed genome size";
 		printf "%${w}s %10s\n", $desc, "$percent%";
 		store_results($desc, $percent) if ($csv);		
+		
+		# Also want to find total fraction of genome (based on estimated size) that is 
+		# in 'non-useful scaffolds', those below average size of vertebrate gene
+		# (taken to be 25 kbp)
+		my $useful_length = 25000;
+		my $sum_non_useful = 0;
+		foreach my $length (@{$data{$type}{lengths}}){
+			($sum_non_useful += $length) if ($length < $useful_length);			
+		}
+		# calculate how much non-useful sequence there was
+		$desc = "Non-useful amount of $type sequences (< 25K nt)";
+		printf "%${w}s %10d\n", $desc, $sum_non_useful;
+		store_results($desc, $sum_non_useful) if ($csv);
+
+		my $percent_non_useful = sprintf("%.1f",($sum_non_useful / $genome_size) * 100);
+ 		$desc = "% of estimated genome that is non-useful";
+		printf "%${w}s %10s\n", $desc, "$percent_non_useful%";
+		store_results($desc, $percent_non_useful) if ($csv);
+
 	}
 		
 	
@@ -289,8 +309,9 @@ sub sequence_statistics{
 		store_results($desc, $matches)  if ($csv);
 
 		$desc = "Percentage of ${type}s > $sizes_to_shorthand{$size} nt";
-		store_results($desc, $percent)  if ($csv);	}
-	
+		store_results($desc, $percent)  if ($csv);	
+	}
+		
 	
 	# mean sequence size
 	my $mean = sprintf("%.0f",$total_size / $count);
@@ -358,11 +379,11 @@ sub sequence_statistics{
 		
 		$running_total = 0;
 		$i = 0;
-		
+				
 		foreach my $length (reverse sort{$a <=> $b} @{$data{$type}{lengths}}){
 			$i++;
 			$running_total += $length;
-		
+					
 			# now do the same for NG values, using assumed genome size
 			while($running_total > int (($ng_index / 100) * $genome_size)){	
 				if ($ng_index == 50){
@@ -380,11 +401,12 @@ sub sequence_statistics{
 			}		
 		}
 		
-		
+		# calculate N50/NG50 difference
 		my $n50_diff = abs($ng50_length - $n50_length);
 		$desc = "N50 $type - NG50 $type length difference";
 		printf "%${w}s %10d\n", $desc, $n50_diff;
 		store_results($desc, $n50_diff) if ($csv);
+						
 	}
 	# add final value to @n_values and @ng_values which will just be the shortest sequence
 #	$n_values[100] = $min;
