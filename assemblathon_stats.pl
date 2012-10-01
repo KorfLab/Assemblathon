@@ -253,7 +253,7 @@ sub sequence_statistics{
 
 
 	# For scaffold data only, can caluclate the percentage of known genome size 
-	# and also the amount of non-useful sequence
+	# and also the amount of useful sequence
 	if ($type eq 'scaffold' && defined($genome_size)){		
 		my $percent = sprintf("%.1f",($total_size / $genome_size) * 100);
 		$desc = "Total scaffold length as percentage of assumed genome size";
@@ -264,19 +264,19 @@ sub sequence_statistics{
 		# in 'non-useful scaffolds', those below average size of vertebrate gene
 		# (taken to be 25 kbp)
 		my $useful_length = 25000;
-		my $sum_non_useful = 0;
+		my $sum_useful = 0;
 		foreach my $length (@{$data{$type}{lengths}}){
-			($sum_non_useful += $length) if ($length < $useful_length);			
+			($sum_useful += $length) if ($length >= $useful_length);			
 		}
 		# calculate how much non-useful sequence there was
-		$desc = "Non-useful amount of $type sequences (< 25K nt)";
-		printf "%${w}s %10d\n", $desc, $sum_non_useful;
-		store_results($desc, $sum_non_useful) if ($csv);
+		$desc = "Useful amount of $type sequences (>= 25K nt)";
+		printf "%${w}s %10d\n", $desc, $sum_useful;
+		store_results($desc, $sum_useful) if ($csv);
 
-		my $percent_non_useful = sprintf("%.1f",($sum_non_useful / $genome_size) * 100);
- 		$desc = "% of estimated genome that is non-useful";
-		printf "%${w}s %10s\n", $desc, "$percent_non_useful%";
-		store_results($desc, $percent_non_useful) if ($csv);
+		my $percent_useful = sprintf("%.1f",($sum_useful / $genome_size) * 100);
+ 		$desc = "% of estimated genome that is useful";
+		printf "%${w}s %10s\n", $desc, "$percent_useful%";
+		store_results($desc, $percent_useful) if ($csv);
 
 	}
 		
